@@ -190,7 +190,7 @@ def decide(signals: dict) -> dict:
             reason_codes.append("validator-changed-diagnosis")
         return _with_delegation(
             _record("replan", "dependency", "impact", "none", reason_codes),
-            signals, high_stakes=True)
+            signals, high_stakes=high_stakes)
 
     if high_stakes or uncertainty == "high":
         for key in ("destructive", "security", "auth", "migration", "broad_fanout"):

@@ -201,6 +201,21 @@ class DecideTests(unittest.TestCase):
         self.assertEqual(record["planning"], "replan")
         self.assertIn("repeated-failure", record["reason_codes"])
 
+    def test_low_stakes_replan_does_not_get_reviewer(self):
+        record = decide({"repeated_failures": 2})
+        self.assertEqual(record["planning"], "replan")
+        self.assertEqual(record["delegation"], "none")
+        self.assertEqual(record["reason_codes"], ["repeated-failure"])
+        record = decide({"assumptions_invalidated": True})
+        self.assertEqual(record["delegation"], "none")
+        self.assertNotIn("risky-implementation", record["reason_codes"])
+
+    def test_high_stakes_replan_still_gets_reviewer(self):
+        record = decide({"repeated_failures": 2, "security": True})
+        self.assertEqual(record["planning"], "replan")
+        self.assertEqual(record["delegation"], "reviewer")
+        self.assertIn("risky-implementation", record["reason_codes"])
+
     def test_invalidated_assumptions_replan(self):
         record = decide({"assumptions_invalidated": True})
         self.assertEqual(record["planning"], "replan")
