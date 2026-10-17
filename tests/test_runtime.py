@@ -49,6 +49,20 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(state["read_files"], [])
         self.assertEqual(json.loads((session / "coverage.json").read_text()), {"AC1": "PENDING"})
 
+    def test_stop_gate_rejects_missing_contract(self):
+        session = self.init({"mode": "implement", "objective": "x", "acceptance_criteria": ["AC1"]})
+        (session / "contract.json").unlink()
+        decision = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
+        self.assertEqual(decision["decision"], "continue")
+        self.assertIn("contract is missing or invalid", decision["reason"])
+
+    def test_stop_gate_rejects_corrupt_contract(self):
+        session = self.init({"mode": "implement", "objective": "x", "acceptance_criteria": ["AC1"]})
+        (session / "contract.json").write_text("{not-json")
+        decision = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
+        self.assertEqual(decision["decision"], "continue")
+        self.assertIn("contract is missing or invalid", decision["reason"])
+
     def test_init_rejects_task_id_path_traversal(self):
         result = run_script(
             "init_session.py", None,
