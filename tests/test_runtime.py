@@ -85,6 +85,32 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.cwd.parent / "escape").exists())
 
+    def test_init_rejects_unknown_mode_without_creating_session(self):
+        result = run_script(
+            "init_session.py", None,
+            "--task-id", "invalid-mode",
+            "--contract-json", json.dumps({"mode": "yolo-destroy", "objective": "x"}),
+            cwd=self.cwd,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown mode", result.stderr)
+        self.assertFalse((self.cwd / ".gravitas" / "sessions" / "invalid-mode").exists())
+
+    def test_pre_tool_denies_unknown_mode_contract(self):
+        session = self.init({"mode": "implement", "objective": "x"})
+        contract_path = session / "contract.json"
+        contract = json.loads(contract_path.read_text())
+        contract["mode"] = "yolo-destroy"
+        contract_path.write_text(json.dumps(contract))
+        result = run_script(
+            "pre_tool.py",
+            {"tool_name": "write_to_file", "tool_input": {"TargetFile": "new.py"}},
+            cwd=self.cwd,
+        )
+        decision = json.loads(result.stdout)
+        self.assertEqual(decision["decision"], "deny")
+        self.assertIn("Unknown contract mode", decision["reason"])
+
     def test_plan_only_blocks_shell_mutation(self):
         self.init({"mode": "plan-only", "objective": "x"})
         result = run_script("pre_tool.py", {"toolCall": {"name": "run_command", "args": {"CommandLine": "git commit -m nope"}}}, cwd=self.cwd)
