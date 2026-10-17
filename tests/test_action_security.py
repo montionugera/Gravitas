@@ -56,6 +56,8 @@ class ClassifierHardeningTests(unittest.TestCase):
         for command in ("git diff --output=out.patch", "git show --output out.txt HEAD",
                         "git log --output=o", "git diff --ext-diff",
                         "git -c diff.external=./hook diff", "git -c core.pager=./x log",
+                        "git -c include.path=/tmp/evil log", "git -c core.askpass=/tmp/evil log",
+                        "git -c includeIf.gitdir:/foo.path=/tmp/evil diff",
                         "git branch newbranch", "git branch feat HEAD~1",
                         "git branch -u origin/main", "git branch --set-upstream-to=origin/main"):
             with self.subTest(command=command):
@@ -82,6 +84,17 @@ class ClassifierHardeningTests(unittest.TestCase):
                         "sed -e 's/a/b/W out' f", "sed 's/x/id/e' f", "sed -n '1,5w out' f",
                         "sed -n '/err/w errors.txt' f", "sed -f prog.sed f",
                         "sed -n -e 'p' -e 'w out' f"):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "mutation", command)
+
+    def test_sed_inplace_variants_are_mutation(self):
+        for command in ("sed --in-place=.bak s/a/b/ f",
+                        "sed --in-place s/a/b/ f",
+                        "sed -ni s/a/b/ f",
+                        "sed -i.bak s/a/b/ f",
+                        "sed -in s/a/b/ f",
+                        "sed -Ei s/a/b/ f",
+                        "sed -ri s/a/b/ f"):
             with self.subTest(command=command):
                 self.assertEqual(classify_shell(command)["mutation"], "mutation", command)
 
