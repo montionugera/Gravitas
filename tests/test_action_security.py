@@ -67,6 +67,35 @@ class ClassifierHardeningTests(unittest.TestCase):
         self.assertEqual(classify_shell("ls 2>err.txt")["paths"], ["err.txt"])
         self.assertEqual(classify_shell("cat<in.txt")["paths"], ["in.txt"])
 
+    def test_dangerous_leading_env_vars_classified_mutation(self):
+        for command in (
+            "LD_PRELOAD=/tmp/x.so ls",
+            "LD_LIBRARY_PATH=/tmp/evil ls",
+            "DYLD_INSERT_LIBRARIES=/tmp/x.dylib ls",
+            "GIT_PAGER=./evil git log",
+            "PAGER=./evil git log",
+            "GIT_EXTERNAL_DIFF=./evil git diff",
+            "GIT_EDITOR=./evil git status",
+            "PYTHONPATH=/tmp/evil python3 --version",
+            "NODE_OPTIONS='--require /evil.js' node --version",
+            "BASH_ENV=/tmp/evil bash --version",
+            "env LD_PRELOAD=/tmp/x.so ls",
+            "sudo GIT_PAGER=./evil git log",
+            "env -i PAGER=./evil git log",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "mutation", command)
+
+    def test_inert_leading_env_vars_remain_read_only(self):
+        for command in (
+            "VAR=1 ls",
+            "DEBUG=1 git status",
+            "LANG=C git status",
+            "LC_ALL=C git diff",
+            "FOO=bar echo hello",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "none", command)
     def test_git_read_only_subcommands_with_write_or_exec_flags(self):
         for command in ("git diff --output=out.patch", "git show --output out.txt HEAD",
                         "git log --output=o", "git diff --ext-diff",

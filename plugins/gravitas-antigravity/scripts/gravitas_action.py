@@ -142,16 +142,32 @@ def _basename(argv0: str) -> str:
     return argv0.rsplit("/", 1)[-1]
 
 
+#: Environment variables that can run code, inject libraries, or alter binary execution.
+DANGEROUS_ENV_VARS = frozenset({
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
+    "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+    "PAGER", "EDITOR", "VISUAL",
+    "GIT_PAGER", "GIT_EDITOR", "GIT_SEQUENCE_EDITOR",
+    "GIT_EXTERNAL_DIFF", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_ASKPASS",
+    "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME",
+    "NODE_OPTIONS", "RUBYOPT", "PERL5OPT", "PERL5LIB",
+    "BASH_ENV", "ENV", "PROMPT_COMMAND",
+})
+
 #: Wrappers/prefixes stripped before binary dispatch (no bypass by prefix).
 _WRAPPERS = frozenset({"env", "sudo", "command", "nohup", "time", "nice", "stdbuf"})
 
 
-def _strip_wrappers(argv: list) -> list:
+def _strip_wrappers(argv: list, dangerous: list[str] | None = None) -> list:
     """Remove env assignments and wrapper commands so `env rm x` etc. dispatch on the real binary."""
     argv = list(argv)
     while argv:
         head = argv[0]
         if "=" in head and not head.startswith("-") and "/" not in head.split("=")[0]:
+            name = head.split("=", 1)[0]
+            if name in DANGEROUS_ENV_VARS or name.upper() in DANGEROUS_ENV_VARS:
+                if dangerous is not None:
+                    dangerous.append(name)
             argv = argv[1:]
             continue
         if _basename(head) in _WRAPPERS:
@@ -165,6 +181,10 @@ def _strip_wrappers(argv: list) -> list:
                 else:
                     argv = argv[1:]
             while argv and "=" in argv[0] and not argv[0].startswith("-"):
+                name = argv[0].split("=", 1)[0]
+                if name in DANGEROUS_ENV_VARS or name.upper() in DANGEROUS_ENV_VARS:
+                    if dangerous is not None:
+                        dangerous.append(name)
                 argv = argv[1:]
             continue
         break
@@ -352,9 +372,21 @@ def classify_shell_segment(segment: str, _depth: int = 0) -> dict:
         return {"mutation": "mutation", "reason": "unparsable shell segment fails closed"}
     if not argv:
         return {"mutation": "none", "reason": "empty segment"}
-    argv = _strip_wrappers(argv)
+    dangerous_vars: list[str] = []
+    argv = _strip_wrappers(argv, dangerous=dangerous_vars)
     if not argv:
         return {"mutation": "mutation", "reason": "wrapper-only segment fails closed"}
+    result = _classify_shell_segment_binary(argv, segment, _depth=_depth)
+    if dangerous_vars and LEVELS.index(result["mutation"]) < LEVELS.index("mutation"):
+        result["mutation"] = "mutation"
+        var_names = ", ".join(dict.fromkeys(dangerous_vars))
+        existing = result.get("reason", "")
+        suffix = f"; {existing}" if existing else ""
+        result["reason"] = f"dangerous environment variable {var_names} can execute code or inject libraries{suffix}"
+    return result
+
+
+def _classify_shell_segment_binary(argv: list, segment: str, _depth: int = 0) -> dict:
     binary = _basename(argv[0])
     rest = argv[1:]
 
