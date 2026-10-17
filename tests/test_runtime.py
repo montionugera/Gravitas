@@ -49,6 +49,12 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(state["read_files"], [])
         self.assertEqual(json.loads((session / "coverage.json").read_text()), {"AC1": "PENDING"})
 
+    def test_stop_gate_rejects_contract_without_acceptance_criteria(self):
+        session = self.init({"mode": "implement", "objective": "x"})
+        decision = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
+        self.assertEqual(decision["decision"], "continue")
+        self.assertIn("no acceptance criteria", decision["reason"])
+
     def test_stop_gate_rejects_missing_contract(self):
         session = self.init({"mode": "implement", "objective": "x", "acceptance_criteria": ["AC1"]})
         (session / "contract.json").unlink()
@@ -62,6 +68,12 @@ class RuntimeTests(unittest.TestCase):
         decision = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
         self.assertEqual(decision["decision"], "continue")
         self.assertIn("contract is missing or invalid", decision["reason"])
+    def test_stop_gate_rejects_missing_evidence_for_criteria(self):
+        session = self.init({"mode": "implement", "objective": "x", "acceptance_criteria": ["AC1"]})
+        (session / "evidence.jsonl").unlink()
+        decision = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
+        self.assertEqual(decision["decision"], "continue")
+        self.assertIn("no verification evidence", decision["reason"])
 
     def test_init_rejects_task_id_path_traversal(self):
         result = run_script(

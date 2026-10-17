@@ -127,6 +127,13 @@ def main():
         print(json.dumps({"decision": "continue", "reason": reason}))
         return
 
+    acceptance_criteria = contract.get("acceptance_criteria")
+    if not isinstance(acceptance_criteria, list) or not acceptance_criteria:
+        reason = "Completion gate: contract declares no acceptance criteria; define what done means before stopping"
+        record_stop_gate_cycle(session_dir, "continue", reason)
+        print(json.dumps({"decision": "continue", "reason": reason}))
+        return
+
     evidence = load_evidence(session_dir)
     state = load_state(session_dir)
     failures = load_failures(session_dir)
@@ -168,7 +175,6 @@ def main():
     # (written before the final mutation), SUPPORTED, FAIL, BLOCKED, and
     # UNVERIFIABLE all block with the deficit action attached.
     states = criterion_states(contract, evidence)
-    acceptance_criteria = contract.get("acceptance_criteria", [])
     deficit = {item["criterion"]: item for item in evidence_deficit(contract, states)}
     uncovered = []
     for index, criterion in enumerate(acceptance_criteria, 1):
