@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS))
 import test_runtime
 from gravitas_action import antigravity_envelope, classify_shell, normalize
 from gravitas_policy import (
+    FAIL_CLOSED_MODE,
     MODE_ALIASES,
     READ_ONLY_MODES,
     decide,
@@ -147,9 +148,23 @@ class ModeTests(unittest.TestCase):
         self.assertEqual(normalize_mode("plan-only"), "plan")
         self.assertEqual(normalize_mode("review-only"), "review")
 
-    def test_unknown_modes_fail_safe_to_implement(self):
-        self.assertEqual(normalize_mode("yolo"), "implement")
-        self.assertEqual(normalize_mode(None), "implement")
+    def test_unknown_modes_fail_closed_to_read_only(self):
+        for bad in ("yolo", "bogus", "", "   ", None, 123, ["implement"]):
+            with self.subTest(mode=bad):
+                self.assertEqual(normalize_mode(bad), FAIL_CLOSED_MODE)
+                self.assertIn(normalize_mode(bad), READ_ONLY_MODES)
+
+    def test_known_modes_are_case_and_space_insensitive(self):
+        self.assertEqual(normalize_mode("IMPLEMENT"), "implement")
+        self.assertEqual(normalize_mode(" Plan-Only "), "plan")
+        self.assertEqual(normalize_mode("security-review"), "security-review")
+
+    def test_unknown_mode_in_contract_denies_writes(self):
+        record = policy_record_for_contract({"mode": "bogus"}, {})
+        self.assertEqual(record["mode"], FAIL_CLOSED_MODE)
+
+    def test_missing_mode_key_still_defaults_to_implement(self):
+        self.assertEqual(policy_record_for_contract({}, {})["mode"], "implement")
 
     def test_read_only_set(self):
         for mode in ("answer", "research", "plan", "review", "security-review"):

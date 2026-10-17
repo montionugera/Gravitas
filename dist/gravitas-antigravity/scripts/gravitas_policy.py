@@ -34,11 +34,18 @@ READ_ONLY_MODES = frozenset({"answer", "research", "plan", "review", "security-r
 MODE_ALIASES = {"plan-only": "plan", "review-only": "review"}
 
 
+# Unknown, empty, or non-string modes must not buy write access: they fall back
+# to the most restrictive read-only mode. A missing "mode" key is a separate
+# case, handled by callers via ``contract.get("mode", "implement")``.
+FAIL_CLOSED_MODE = "answer"
+
+
 def normalize_mode(mode: object) -> str:
     if not isinstance(mode, str):
-        return "implement"
+        return FAIL_CLOSED_MODE
+    mode = mode.strip().lower()
     mode = MODE_ALIASES.get(mode, mode)
-    return mode if mode in MODES else "implement"
+    return mode if mode in MODES else FAIL_CLOSED_MODE
 
 
 def action_fingerprint(tool: str, args: dict) -> str:
@@ -270,7 +277,7 @@ def policy_record_for_contract(contract: dict, signals: dict) -> dict:
 
 
 __all__ = [
-    "MODES", "READ_ONLY_MODES", "MODE_ALIASES", "normalize_mode",
+    "MODES", "READ_ONLY_MODES", "MODE_ALIASES", "FAIL_CLOSED_MODE", "normalize_mode",
     "action_fingerprint", "target_in_scope", "evaluate_action",
     "decide", "policy_record_for_contract", "normalize", "workspace_roots",
     "Action", "HostEnvelope",
