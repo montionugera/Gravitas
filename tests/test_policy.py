@@ -220,6 +220,31 @@ class DecideTests(unittest.TestCase):
         record = decide({"assumptions_invalidated": True})
         self.assertEqual(record["planning"], "replan")
 
+    def test_direct_path_keeps_parallel_workstream_signal(self):
+        record = decide({"independent_workstreams": 3})
+        self.assertEqual(record["planning"], "direct")
+        self.assertEqual(record["delegation"], "none")
+        self.assertEqual(
+            record["reason_codes"],
+            ["parallel-workstreams-require-explicit-split", "single-file-low-uncertainty"])
+
+    def test_direct_path_keeps_localization_signal(self):
+        record = decide({"localization_uncertain": True})
+        self.assertEqual(record["planning"], "direct")
+        self.assertEqual(record["delegation"], "investigator")
+        self.assertIn("localization-uncertain", record["reason_codes"])
+
+    def test_read_only_fast_path_keeps_delegation_signals(self):
+        record = decide({"read_only": True, "independent_workstreams": 3})
+        self.assertEqual(record["planning"], "direct")
+        self.assertEqual(
+            record["reason_codes"],
+            ["parallel-workstreams-require-explicit-split", "read-only-or-trivial"])
+
+    def test_plain_direct_records_are_unchanged(self):
+        self.assertEqual(decide({})["reason_codes"], ["single-file-low-uncertainty"])
+        self.assertEqual(decide({})["delegation"], "none")
+
     def test_localization_uncertainty_delegates_investigator(self):
         record = decide({"dependent_files": True, "localization_uncertain": True})
         self.assertEqual(record["delegation"], "investigator")

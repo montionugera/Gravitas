@@ -176,7 +176,9 @@ def decide(signals: dict) -> dict:
         # security, auth, or migration work.
         if not high_stakes:
             reason_codes.append("read-only-or-trivial" if signals.get("read_only") else "trivial-localized")
-            return _record("direct", "target", "targeted", "none", reason_codes)
+            return _with_delegation(
+                _record("direct", "target", "targeted", "none", reason_codes),
+                signals, high_stakes=high_stakes)
 
     if (signals.get("assumptions_invalidated") or signals.get("scope_expanded")
             or repeated >= 2 or signals.get("validator_failure") == "diagnosis-changed"):
@@ -215,7 +217,9 @@ def decide(signals: dict) -> dict:
             signals, high_stakes=False)
 
     reason_codes.append("single-file-low-uncertainty")
-    return _record("direct", "target", "targeted", "none", reason_codes)
+    return _with_delegation(
+        _record("direct", "target", "targeted", "none", reason_codes),
+        signals, high_stakes=high_stakes)
 
 
 def _record(planning: str, context_depth: str, verification_depth: str,
