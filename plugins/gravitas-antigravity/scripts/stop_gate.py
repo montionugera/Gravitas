@@ -12,6 +12,7 @@ Output (stdout): JSON with decision: allow|continue and optional reason
 """
 from __future__ import annotations
 import json
+import shlex
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -28,6 +29,23 @@ from gravitas_evidence import (
 #: Stop-gate attempt budget: after this many continue cycles the gate must
 #: terminate safely instead of looping forever. Termination is explicit
 #: unverified (decision allow + unverified:true), never a false PASS.
+
+
+def legacy_requirement_met(requirement: object, entry: dict) -> bool:
+    """Exact match of a legacy ``required_validators`` item against one evidence entry.
+
+    A requirement is met only by the entry's validator id or by the whole recorded
+    command line. A substring test would let ``"test"`` be satisfied by
+    ``echo latest``.
+    """
+    if not isinstance(requirement, str) or not requirement:
+        return False
+    if entry.get("validator_id") == requirement:
+        return True
+    command = entry.get("command")
+    if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
+        return False
+    return requirement == shlex.join(command)
 
 
 def load_contract(session_dir: Path) -> dict | None:
@@ -212,7 +230,7 @@ def main():
     missing_validators = [
         validator for validator in required_validators
         if not any(
-            validator in " ".join(entry.get("command", [])) and owned_validator_pass(entry) and is_fresh(entry, evidence)
+            legacy_requirement_met(validator, entry) and owned_validator_pass(entry) and is_fresh(entry, evidence)
             for entry in evidence
         )
     ]
