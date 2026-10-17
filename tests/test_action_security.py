@@ -52,6 +52,21 @@ class ClassifierHardeningTests(unittest.TestCase):
     def test_rg_plain_stays_none(self):
         self.assertEqual(classify_shell("rg -n foo src")["mutation"], "none")
 
+    def test_redirections_without_surrounding_whitespace(self):
+        for command in ("echo hi>out.txt", "echo hi>>out.txt", "ls 2>err.txt",
+                        "echo hi> out.txt", "echo hi>> out.txt", "echo hi >out.txt",
+                        "echo hi >>out.txt", "cat<in.txt", "cat< in.txt",
+                        "cat <in.txt", ">out.txt", ">>out.txt", "2>err.txt",
+                        ">file", ">>file", "2>file", "> file"):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "mutation", command)
+
+    def test_redirect_without_whitespace_paths_extracted(self):
+        self.assertEqual(classify_shell("echo hi>out.txt")["paths"], ["out.txt"])
+        self.assertEqual(classify_shell("echo hi>>out.txt")["paths"], ["out.txt"])
+        self.assertEqual(classify_shell("ls 2>err.txt")["paths"], ["err.txt"])
+        self.assertEqual(classify_shell("cat<in.txt")["paths"], ["in.txt"])
+
     def test_git_read_only_subcommands_with_write_or_exec_flags(self):
         for command in ("git diff --output=out.patch", "git show --output out.txt HEAD",
                         "git log --output=o", "git diff --ext-diff",

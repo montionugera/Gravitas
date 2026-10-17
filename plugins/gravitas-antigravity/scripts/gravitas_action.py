@@ -134,7 +134,7 @@ _GIT_EXEC_CONFIG = ("external", "pager", "command", "fsmonitor", "editor", "help
 DESTRUCTIVE_GIT = frozenset({"reset", "clean", "checkout", "restore", "rm"})
 
 _SUBSTITUTION = re.compile(r"\$\(|`[^`]*`|[<>]\(")
-_REDIRECT = re.compile(r"(?:^|[\s\d])(?:>>?|<)(?=\s|$|=)")
+_REDIRECT = re.compile(r"(?<![-=<])(?:(?:>>?|&>>?)(?![(=>])(?:\s|$|&[\d-]|[^\s|&;()<>=])|<(?![<(=>])\s*[^\s|&;()<>=])")
 _PIPE = re.compile(r"\|")
 
 
@@ -557,8 +557,10 @@ def classify_shell(command: str, _depth: int = 0) -> dict:
     if _REDIRECT.search(text):
         worst = "mutation"
         reasons.append("redirection writes outside argv")
-        for match in re.finditer(r"(?:>|>>|<)\s*(\S+)", text):
-            paths.append(match.group(1))
+        for match in re.finditer(r"(?:>>?|&>>?|<)\s*([^\s;&|]+)", text):
+            target = match.group(1)
+            if not target.startswith("&") and target not in paths:
+                paths.append(target)
     for segment in segments:
         operand_paths = _operand_paths(segment)
         for operand in operand_paths:
