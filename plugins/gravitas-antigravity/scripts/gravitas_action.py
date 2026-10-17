@@ -652,6 +652,11 @@ def _classify_shell_segment_binary(argv: list, segment: str, _depth: int = 0) ->
         if verb in {"install", "publish", "add", "remove", "uninstall", "test", "run"}:
             return {"mutation": "mutation", "executable": binary, "argv": argv,
                     "reason": f"{binary} {verb} changes state or executes project code"}
+        if binary == "cargo" and verb in {"check", "c"}:
+            # cargo check compiles and runs build.rs and proc macros, so it is
+            # not read-only (it must agree with the "cargo check" CHECK_COMMANDS entry).
+            return {"mutation": "mutation", "executable": binary, "argv": argv,
+                    "reason": "cargo check executes build scripts and proc macros (side effects possible)"}
         if verb in {"", "ls", "list", "view", "show", "freeze", "check", "--version", "version"}:
             return {"mutation": "none", "executable": binary, "argv": argv,
                     "reason": f"{binary} {verb or 'query'} is read-only"}
