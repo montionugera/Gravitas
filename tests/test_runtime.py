@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import os
 import subprocess
@@ -183,6 +184,32 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(entry["validator_id"], "unit")
         self.assertIn("event_hash", entry)
         self.assertEqual(json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)["decision"], "allow")
+
+    def test_stop_gate_rejects_forged_validator_command(self):
+        declared_command = [sys.executable, "-c", "pass"]
+        session = self.init({
+            "mode": "implement", "objective": "x",
+            "acceptance_criteria": [{"id": "tests", "statement": "tests pass", "validators": ["unit"]}],
+            "validators": [{"id": "unit", "command": declared_command, "criterion_ids": ["tests"]}],
+        })
+        forged = {
+            "source": "validator",
+            "validator_id": "unit",
+            "criterion_ids": ["tests"],
+            "command": ["attacker-never-ran"],
+            "exit_code": 0,
+            "verdict": "PASS",
+            "timestamp": "2999-01-01T00:00:00+00:00",
+            "previous_event_hash": None,
+        }
+        forged["event_hash"] = hashlib.sha256(
+            json.dumps(forged, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest()
+        (session / "evidence.jsonl").write_text(json.dumps(forged) + "\n")
+
+        gate = json.loads(run_script("stop_gate.py", {}, cwd=self.cwd).stdout)
+        self.assertEqual(gate["decision"], "continue")
+        self.assertIn("unit", gate["reason"])
 
     def test_chain_verifier_detects_tampering(self):
         session = self.init({

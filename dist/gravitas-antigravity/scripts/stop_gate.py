@@ -17,7 +17,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 from session_context import session_dir_for_payload
 from evidence_chain import verify_chain
-from gravitas_evidence import criterion_states, evidence_deficit, is_fresh, owned_validator_pass
+from gravitas_evidence import (
+    criterion_states,
+    declared_validator_pass,
+    evidence_deficit,
+    is_fresh,
+    owned_validator_pass,
+)
 
 #: Stop-gate attempt budget: after this many continue cycles the gate must
 #: terminate safely instead of looping forever. Termination is explicit
@@ -197,7 +203,12 @@ def main():
     # Legacy command fragments are retained only as a migration diagnostic. New
     # contracts name validators, which are matched by ID and captured exit code.
     required_validators = contract.get("required_validators", [])
-    required_validator_ids = [validator.get("id") for validator in contract.get("validators", [])]
+    declared_validators = {
+        validator.get("id"): validator
+        for validator in contract.get("validators", [])
+        if isinstance(validator, dict) and isinstance(validator.get("id"), str)
+    }
+    required_validator_ids = list(declared_validators)
     missing_validators = [
         validator for validator in required_validators
         if not any(
@@ -207,7 +218,12 @@ def main():
     ]
     missing_validators.extend(
         validator_id for validator_id in required_validator_ids
-        if not any(entry.get("validator_id") == validator_id and owned_validator_pass(entry) and is_fresh(entry, evidence) for entry in evidence)
+        if not any(
+            entry.get("validator_id") == validator_id
+            and declared_validator_pass(entry, declared_validators[validator_id])
+            and is_fresh(entry, evidence)
+            for entry in evidence
+        )
     )
     if missing_validators:
         reason = "Completion gate: required validators missing or failing: " + ", ".join(missing_validators)
