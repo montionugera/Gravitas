@@ -158,9 +158,127 @@ DANGEROUS_ENV_VARS = frozenset({
 _WRAPPERS = frozenset({"env", "sudo", "command", "nohup", "time", "nice", "stdbuf"})
 
 
-def _strip_wrappers(argv: list, dangerous: list[str] | None = None) -> list:
+def _strip_wrapper_flags(wrapper: str, argv: list) -> list:
+    """Consume known options for a specific wrapper until the command binary or end-of-options."""
+    while argv:
+        token = argv[0]
+        if token == "--":
+            argv = argv[1:]
+            break
+        if not token.startswith("-"):
+            break
+
+        if wrapper == "env":
+            if token in ("-i", "--ignore-environment", "-0", "--null", "-v", "--debug"):
+                argv = argv[1:]
+            elif token in ("-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-a", "--argv0"):
+                if len(argv) > 1:
+                    argv = argv[2:]
+                else:
+                    argv = argv[1:]
+            elif token.startswith(("--unset=", "--chdir=", "--split-string=", "--argv0=",
+                                  "-u=", "-C=", "-S=", "-a=")):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[uCSa].+", token):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "sudo":
+            if token in ("--non-interactive", "--preserve-env", "--set-home", "--preserve-groups",
+                         "--stdin", "--background", "--reset-timestamp", "--remove-timestamp",
+                         "--shell", "--login", "--validate", "--list", "--edit", "--version", "--help"):
+                argv = argv[1:]
+            elif token.startswith("--preserve-env="):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[nEHPSbkKsivleVh]+", token):
+                argv = argv[1:]
+            elif token in ("-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt",
+                           "-C", "--close-from", "-R", "--chroot", "-D", "--chdir",
+                           "-T", "--command-timeout", "-U", "--other-user"):
+                if len(argv) > 1:
+                    argv = argv[2:]
+                else:
+                    argv = argv[1:]
+            elif token.startswith(("--user=", "--group=", "--host=", "--prompt=",
+                                  "--close-from=", "--chroot=", "--chdir=",
+                                  "--command-timeout=", "--other-user=",
+                                  "-u=", "-g=", "-h=", "-p=", "-C=", "-R=", "-D=", "-T=", "-U=")):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[ughpCRDTU].+", token):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "nice":
+            if token in ("-n", "--adjustment"):
+                if len(argv) > 1:
+                    argv = argv[2:]
+                else:
+                    argv = argv[1:]
+            elif token.startswith("--adjustment="):
+                argv = argv[1:]
+            elif re.fullmatch(r"-n[-+]?\d+", token):
+                argv = argv[1:]
+            elif re.fullmatch(r"[-+][0-9]+", token):
+                argv = argv[1:]
+            elif token in ("--help", "--version"):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "stdbuf":
+            if token in ("-i", "-o", "-e", "--input", "--output", "--error"):
+                if len(argv) > 1:
+                    argv = argv[2:]
+                else:
+                    argv = argv[1:]
+            elif token.startswith(("--input=", "--output=", "--error=")):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[ioe].+", token):
+                argv = argv[1:]
+            elif token in ("--help", "--version"):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "time":
+            if token in ("-f", "--format", "-o", "--output"):
+                if len(argv) > 1:
+                    argv = argv[2:]
+                else:
+                    argv = argv[1:]
+            elif token.startswith(("--format=", "--output=", "-f=", "-o=")):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[fo].+", token):
+                argv = argv[1:]
+            elif re.fullmatch(r"-[pva]+", token) or token in ("--portability", "--verbose", "--append", "--help", "--version"):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "command":
+            if re.fullmatch(r"-[pvV]+", token) or token in ("--help", "--version"):
+                argv = argv[1:]
+            else:
+                break
+
+        elif wrapper == "nohup":
+            if token in ("--help", "--version"):
+                argv = argv[1:]
+            else:
+                break
+
+        else:
+            break
+
+    return argv
+
+
+def _strip_wrappers(argv: list, dangerous: list[str] | None = None, info: dict | None = None) -> list:
     """Remove env assignments and wrapper commands so `env rm x` etc. dispatch on the real binary."""
     argv = list(argv)
+    wrapper_seen = False
     while argv:
         head = argv[0]
         if "=" in head and not head.startswith("-") and "/" not in head.split("=")[0]:
@@ -170,16 +288,11 @@ def _strip_wrappers(argv: list, dangerous: list[str] | None = None) -> list:
                     dangerous.append(name)
             argv = argv[1:]
             continue
-        if _basename(head) in _WRAPPERS:
+        w = _basename(head)
+        if w in _WRAPPERS:
+            wrapper_seen = True
             argv = argv[1:]
-            # env flags carry no command: -i, -u VAR, --unset=VAR
-            while argv and (argv[0] in ("-i", "--ignore-environment")
-                            or argv[0] in ("-u", "--unset")
-                            or argv[0].startswith("--unset=")):
-                if argv[0] in ("-u", "--unset") and len(argv) > 1:
-                    argv = argv[2:]
-                else:
-                    argv = argv[1:]
+            argv = _strip_wrapper_flags(w, argv)
             while argv and "=" in argv[0] and not argv[0].startswith("-"):
                 name = argv[0].split("=", 1)[0]
                 if name in DANGEROUS_ENV_VARS or name.upper() in DANGEROUS_ENV_VARS:
@@ -188,6 +301,10 @@ def _strip_wrappers(argv: list, dangerous: list[str] | None = None) -> list:
                 argv = argv[1:]
             continue
         break
+    if info is not None:
+        info["wrapper_seen"] = wrapper_seen
+        if wrapper_seen and argv and argv[0].startswith("-"):
+            info["unknown_wrapper_flag"] = argv[0]
     return argv
 
 
@@ -373,9 +490,14 @@ def classify_shell_segment(segment: str, _depth: int = 0) -> dict:
     if not argv:
         return {"mutation": "none", "reason": "empty segment"}
     dangerous_vars: list[str] = []
-    argv = _strip_wrappers(argv, dangerous=dangerous_vars)
+    info: dict = {}
+    argv = _strip_wrappers(argv, dangerous=dangerous_vars, info=info)
     if not argv:
         return {"mutation": "mutation", "reason": "wrapper-only segment fails closed"}
+    if info.get("unknown_wrapper_flag"):
+        flag = info["unknown_wrapper_flag"]
+        return {"mutation": "destructive", "executable": flag, "argv": argv,
+                "reason": f"unrecognized wrapper flag {flag!r} fails closed to destructive"}
     result = _classify_shell_segment_binary(argv, segment, _depth=_depth)
     if dangerous_vars and LEVELS.index(result["mutation"]) < LEVELS.index("mutation"):
         result["mutation"] = "mutation"

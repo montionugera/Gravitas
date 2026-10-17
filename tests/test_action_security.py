@@ -96,6 +96,53 @@ class ClassifierHardeningTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertEqual(classify_shell(command)["mutation"], "none", command)
+    def test_wrapper_commands_with_flags_preserve_severity(self):
+        for command in (
+            "sudo -n rm x",
+            "nice -n5 rm x",
+            "nice -n 5 rm x",
+            "nice -5 rm x",
+            "sudo -u root rm x",
+            "sudo -u root -g wheel rm x",
+            "sudo -E rm x",
+            "sudo -- rm x",
+            "stdbuf -oL rm x",
+            "stdbuf -i0 -o0 -e0 rm x",
+            "time -p rm x",
+            "command -p rm x",
+            "sudo -n nice -n5 rm x",
+            "sudo -n git reset --hard",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "destructive", command)
+
+    def test_wrapper_commands_with_flags_read_only(self):
+        for command in (
+            "sudo -n ls",
+            "nice -n5 ls",
+            "nice -n 10 git diff",
+            "sudo -u root ls",
+            "sudo -E ls",
+            "stdbuf -oL ls",
+            "time -p ls",
+            "command -p ls",
+            "sudo -- ls",
+            "sudo -n git status",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "none", command)
+
+    def test_wrapper_unknown_flag_fails_closed_to_destructive(self):
+        for command in (
+            "sudo --unknown-flag rm x",
+            "sudo --unknown-flag ls",
+            "nice --unknown-flag ls",
+            "stdbuf --unknown-flag ls",
+            "time --unknown-flag ls",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell(command)["mutation"], "destructive", command)
+
     def test_git_read_only_subcommands_with_write_or_exec_flags(self):
         for command in ("git diff --output=out.patch", "git show --output out.txt HEAD",
                         "git log --output=o", "git diff --ext-diff",
